@@ -3,6 +3,12 @@ import warnings
 from cpython.bytes cimport *
 from cpython.unicode cimport *
 
+cdef extern from "sys/types.h":
+    struct stat:
+        int st_size
+cdef extern from "sys/stat.h": pass
+cdef extern from "fcntl.h": pass
+
 cdef extern from "archive.h":
     cdef struct archive
     cdef struct archive_entry
@@ -15,10 +21,9 @@ cdef extern from "archive.h":
     int archive_read_open_filename(archive *, char *, int)
     int archive_read_next_header(archive *, archive_entry **)
     int archive_read_data(archive *, void *buf, int size)
+    int archive_read_data_block(archive *, void **, size_t *, size_t*)
     int archive_read_data_skip(archive *)
     char *archive_error_string(archive *)
-
-    char * archive_entry_pathname(archive_entry *)
 
     cdef enum:
         ARCHIVE_EOF
@@ -28,6 +33,11 @@ cdef extern from "archive.h":
         ARCHIVE_FAILED
         ARCHIVE_FATAL
 
+cdef extern from "archive_entry.h":
+    char * archive_entry_pathname(archive_entry *)
+    stat *archive_entry_stat(archive_entry *)
+
+
 cdef extern from "Python.h":
     object PyUnicode_EncodeFSDefault(object)
     object PyUnicode_DecodeFSDefaultAndSize(char *, Py_ssize_t)
@@ -35,6 +45,10 @@ cdef extern from "Python.h":
 
 cdef extern from "string.h":
     int strlen(char *)
+
+cdef extern from "malloc.h":
+    void *alloca(size_t sz)
+
 
 class ArchiveWarning(Warning):
     pass
@@ -56,9 +70,11 @@ cdef class Archive
 cdef class Entry:
     cdef Archive archive
     cdef archive_entry *_entry
+    cdef Py_ssize_t position
 
     def __init__(self, archive):
         self.archive = archive
+        self.position = 0
 
     property filename:
         def __get__(self):
@@ -74,15 +90,34 @@ cdef class Entry:
     def close(self):
         self.skip()
 
-    def read(self, size):
-        cdef object res = PyBytes_FromStringAndSize(NULL, size)
-        cdef int bread
-        cdef void *buf = PyBytes_AsString(res)
-        cdef PyObject *pres = <PyObject *>res
-        bread = self.archive._checkl(archive_read_data(self.archive._arch,
-            buf, size))
-        _PyBytes_Resize(&pres, bread)
-        return <object>(res)
+    def read(self, size=-1):
+        cdef size_t sz
+        cdef size_t ln
+        cdef void *buf
+        cdef size_t len
+        cdef size_t offset
+        if size == -1:
+            sz = archive_entry_stat(self._entry).st_size
+            if sz > self.position:
+                ln = sz - self.position
+                buf = <char*>alloca(ln)
+                bread = self.archive._checkl(archive_read_data(self.archive._arch,
+                    buf, sz - self.position))
+                assert bread == ln
+                res = PyBytes_FromStringAndSize(<char*>buf + self.position, ln)
+                self.position = sz
+                return res
+            return b""
+        r = archive_read_data_block(self.archive._arch, &buf, &len, &offset)
+        if r == ARCHIVE_EOF:
+            return b""
+        self.archive._check(r)
+        if offset > self.position:
+            zlen = offset - self.position
+            self.position = offset + len
+            return b'\x00'*zlen + PyBytes_FromStringAndSize(<char *>buf, len)
+        self.position = offset + len
+        return PyBytes_FromStringAndSize(<char *>buf, len)
 
 cdef class Archive:
     cdef archive *_arch
