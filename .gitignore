@@ -4,3 +4,5 @@
 *.swo
 __pycache__
 /build
+/MANIFEST
+/dist
