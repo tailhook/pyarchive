@@ -21,7 +21,7 @@ cdef extern from "archive.h":
     int archive_read_open_filename(archive *, char *, int)
     int archive_read_next_header(archive *, archive_entry **)
     int archive_read_data(archive *, void *buf, int size)
-    int archive_read_data_block(archive *, void **, size_t *, size_t*)
+    int archive_read_data_block(archive *, void **, size_t *, int *)
     int archive_read_data_skip(archive *)
     char *archive_error_string(archive *)
 
@@ -36,6 +36,7 @@ cdef extern from "archive.h":
 cdef extern from "archive_entry.h":
     char * archive_entry_pathname(archive_entry *)
     stat *archive_entry_stat(archive_entry *)
+    void archive_entry_free(archive_entry *)
 
 
 cdef extern from "Python.h":
@@ -82,6 +83,9 @@ cdef class Entry:
             cdef Py_ssize_t len = strlen(pathname)
             return PyUnicode_DecodeFSDefaultAndSize(pathname, len)
 
+    def __del__(self):
+        archive_entry_free(self._entry)
+
     def skip(self):
         if self.archive._cur is self:
             self.archive._cur = None
@@ -95,7 +99,7 @@ cdef class Entry:
         cdef size_t ln
         cdef void *buf
         cdef size_t len
-        cdef size_t offset
+        cdef int offset
         if size == -1:
             sz = archive_entry_stat(self._entry).st_size
             if sz > self.position:
