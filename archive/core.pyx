@@ -2,6 +2,7 @@ import warnings
 
 from cpython.bytes cimport *
 from cpython.unicode cimport *
+from libc.stdint cimport int64_t
 
 cdef extern from "sys/types.h":
     struct stat:
@@ -35,6 +36,8 @@ cdef extern from "archive.h":
 
 cdef extern from "archive_entry.h":
     char * archive_entry_pathname(archive_entry *)
+    int64_t archive_entry_size(archive_entry *)
+    int archive_entry_mode(archive_entry *)
     stat *archive_entry_stat(archive_entry *)
     void archive_entry_free(archive_entry *)
 
@@ -82,6 +85,14 @@ cdef class Entry:
             cdef char *pathname = archive_entry_pathname(self._entry)
             cdef Py_ssize_t len = strlen(pathname)
             return PyUnicode_DecodeFSDefaultAndSize(pathname, len)
+
+    property mode:
+        def __get__(self):
+            return archive_entry_mode(self._entry)
+
+    property size:
+        def __get__(self):
+            return archive_entry_size(self._entry)
 
     def __del__(self):
         archive_entry_free(self._entry)

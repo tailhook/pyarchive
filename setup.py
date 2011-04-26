@@ -3,7 +3,7 @@ from distutils.extension import Extension
 from Cython.Distutils import build_ext
 
 setup(name='pyarchive',
-    version='0.1',
+    version='0.1.1',
     description='Python wrapper for libarchive',
     author='Paul Colomiets',
     author_email='pc@gafol.net',
